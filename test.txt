@@ -1,0 +1,49 @@
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+from sentence_transformers import SentenceTransformer
+from typing import List
+
+# 1. Initialize FastAPI app
+app = FastAPI(
+    title="Free Embedding API",
+    description="A custom microservice for generating text embeddings locally.",
+    version="1.0"
+)
+
+# 2. Load the embedding model (downloads automatically on first run)
+# 'all-MiniLM-L6-v2' is very fast, accurate, and lightweight (~90MB)
+MODEL_NAME = "all-MiniLM-L6-v2"
+model = SentenceTransformer(MODEL_NAME)
+
+# 3. Define the request structure using Pydantic
+class EmbeddingRequest(BaseModel):
+    texts: List[str]
+
+# 4. Create the API endpoint
+@app.post("/v1/embeddings")
+async def get_embeddings(request: EmbeddingRequest):
+    if not request.texts:
+        raise HTTPException(status_code=400, detail="The 'texts' list cannot be empty.")
+    
+    try:
+        # Generate embeddings (returns a numpy array)
+        embeddings = model.encode(request.texts)
+        
+        # Convert numpy array to standard Python lists so it can be sent as JSON
+        embeddings_list = embeddings.tolist()
+        
+        return {
+            "object": "list",
+            "model": MODEL_NAME,
+            "data": [
+                {"object": "embedding", "embedding": emb, "index": i} 
+                for i, emb in enumerate(embeddings_list)
+            ]
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Optional: Add a health check endpoint
+@app.get("/health")
+def health_check():
+    return {"status": "healthy", "model": MODEL_NAME}
